@@ -102,7 +102,7 @@ create index d_loc_idx on dim_location(state(100),city(100),trunc_zip);
 
 #Grain is 1 row every transaction (contains attributes which changes with every transaction)
 create table if not exists fact_credit_transactions(
-trans_num varchar(255) primary key,
+trans_num varchar(255),
 card_id int,
 merchant_id int,
 time_id int,
@@ -112,37 +112,7 @@ distance float,
 is_fraud int
 );
 
-insert into fact_credit_transactions(
-trans_num,
-card_id,
-merchant_id,
-time_id,
-location_id,
-amt,
-distance,
-is_fraud)
-select
-f.trans_num,
-c.card_id,
-m.merchant_id,
-t.time_id,
-l.location_id,
-f.amt,
-f.distance,
-f.is_fraud
-from featured_credit_card_transactions f
-left join dim_card c
-on f.cc_num_key=c.cc_num_key
-left join dim_merchant m
-on f.merchant=m.merchant
-and f.merch_zipcode=m.merch_zipcode
-left join dim_time t
-on f.trans_date=t.trans_date
-and f.hr=t.hr
-left join dim_location l
-on f.state=l.state
-and f.city=l.city 
-and f.trunc_zip=l.trunc_zip;
+ 
 
 create table if not exists customer_summary as
 select
@@ -172,7 +142,7 @@ sum(amt) as total_merchant_txn,
 avg(amt) as avg_merchant_txn,
 max(amt) as max_merchant_txn,
 sum(is_fraud) as total_fraud_count,
-sum(is_fraud)/count(*) as fraud_rate,
+cast(sum(is_fraud)/count(*) as decimal) as fraud_rate,
 sum(weekend) as count_weekend_txn,
 sum(case when hr between 0 and 5 then 1 else 0 end) as night_txn_count
 from featured_credit_card_transactions 
@@ -207,7 +177,4 @@ drop table fact_credit_transactions;
 alter table temp_featured_credit_card_transactions
 rename to featured_credit_card_transactions;
 
-select 
-*
-from featured_credit_card_transactions
-where trans_num = '1f76529f8574734946361c461b024d99';
+select * from fact_credit_transactions;
