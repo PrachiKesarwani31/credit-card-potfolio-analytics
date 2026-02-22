@@ -102,7 +102,7 @@ create index d_loc_idx on dim_location(state(100),city(100),trunc_zip);
 
 #Grain is 1 row every transaction (contains attributes which changes with every transaction)
 create table if not exists fact_credit_transactions(
-trans_num text primary key,
+trans_num varchar(255) primary key,
 card_id int,
 merchant_id int,
 time_id int,
@@ -157,7 +157,7 @@ max(state) as latest_state,
 max(job) as latest_occupation,
 max(age) as latest_age,
 sum(is_fraud) as total_fraud, #0 is no fraud where as 1 is fraud
-sum(is_fraud)/count(*) as fraud_rate, 
+cast(sum(is_fraud)/count(*) as decimal) as fraud_rate, 
 sum(weekend) as weekend_txn_count,
 sum(case when hr between 0 and 5 then 1 else 0 end) as night_txn_count 
 from featured_credit_card_transactions
@@ -166,7 +166,7 @@ group by cc_num_key;
 create table if not exists merchant_summary as
 select
 merchant,
-mech_zipcode,
+merch_zipcode,
 count(*) as total_txn_count,
 sum(amt) as total_merchant_txn,
 avg(amt) as avg_merchant_txn,
@@ -177,3 +177,37 @@ sum(weekend) as count_weekend_txn,
 sum(case when hr between 0 and 5 then 1 else 0 end) as night_txn_count
 from featured_credit_card_transactions 
 group by merchant, merch_zipcode;
+
+select count(*) from cc_num_masking;
+select count(*) from dim_card;
+select count(*) from dim_merchant;
+select count(*) from dim_time;
+select count(*) from dim_location;
+
+
+select 
+trans_num,
+count(*) 
+from featured_credit_card_transactions
+group by trans_num
+having count(*)>1;
+
+select count(*)
+from featured_credit_card_transactions;
+
+create table temp_featured_credit_card_transactions like featured_credit_card_transactions;
+
+insert into temp_featured_credit_card_transactions
+select distinct * from featured_credit_card_transactions;
+
+select count(*) from featured_credit_card_transactions;
+
+drop table fact_credit_transactions;
+
+alter table temp_featured_credit_card_transactions
+rename to featured_credit_card_transactions;
+
+select 
+*
+from featured_credit_card_transactions
+where trans_num = '1f76529f8574734946361c461b024d99';
