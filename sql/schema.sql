@@ -7,6 +7,10 @@ ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 ignore 1 rows;
 
+alter table featured_credit_card_transactions
+modify column trans_date_time datetime;
+
+
 create index f_cc_idx on featured_credit_card_transactions(cc_num_key);
 create index f_merch_idx on featured_credit_card_transactions(merchant(255),merch_zipcode);
 create index f_time_idx on featured_credit_card_transactions(trans_date,hr);
@@ -17,47 +21,22 @@ create table if not exists dim_card as
 select 
 row_number() over(order by cc_num_key) as card_id,
 cc_num_key,
-gender,
-city,
-state,
-trunc_zip,
-city_pop,
-job,
-age,
-age_bucket,
-city_buckets
-from 
-(select distinct
-cc_num_key,
-gender,
-city,
-state,
-trunc_zip,
-city_pop,
-job,
-age,
-age_bucket,
-city_buckets
-from featured_credit_card_transactions) t;
+max(gender),
+max(job),
+max(age),
+max(age_bucket)
+from featured_credit_card_transactions
+group by cc_num_key;
 
 #Grain is 1 row per merchant (so for unique merchant = merchant_merch_zipcode is used)
 create table if not exists dim_merchant as 
 select
-row_number() over(order by merchant, merch_zipcode) as merchant_id,
+row_number() over(order by merchant) as merchant_id,
 merchant,
-merch_zipcode,
-merch_lat,
-merch_long,
-category
-from
-(select
-distinct 
-merchant,
-merch_zipcode,
-merch_lat,
-merch_long,
-category
-from featured_credit_card_transactions) s;
+max(category)
+from featured_credit_card_transactions
+group by merchant;
+
 
 #Grain is distinct time
 create table if not exists dim_time as
@@ -79,7 +58,7 @@ weekend
 from featured_credit_card_transactions) s1;
 
 #Grain is every distinct location
-create table if not exists dim_location as 
+create table if not exists dim_card_location as 
 select
 row_number() over(order by state,city,trunc_zip) as location_id,
 city,
@@ -95,14 +74,38 @@ trunc_zip,
 city_buckets
 from featured_credit_card_transactions) s2;
 
+ALTER TABLE dim_merchant
+ADD CONSTRAINT uq_dim_merchant UNIQUE (merchant);
+
+select
+merchant, count(*)
+from dim_merchant
+group by merchant
+having count(*)>1;
+
+alter table dim_card add unique (cc_num_key);
+alter table dim_merchant add unique (merchant(255));
+alter table dim_time add unique (trans_date,hr);
+alter table dim_location add unique (state(100),city(100),trunc_zip);
+
 create index d_cc_idx on dim_card(cc_num_key);
-create index d_merch_idx on dim_merchant(merchant(255),merch_zipcode);
+create index d_merch_idx on dim_merchant(merchant(255));
 create index d_time_idx on dim_time(trans_date,hr);
 create index d_loc_idx on dim_location(state(100),city(100),trunc_zip);
 
+SHOW FULL COLUMNS FROM dim_time;
+SHOW INDEX FROM dim_merchant;
+
+ALTER TABLE dim_merchant
+MODIFY merchant VARCHAR(255) 
+CHARACTER SET utf8mb4 
+COLLATE utf8mb4_0900_ai_ci 
+NOT NULL;
+
+
 #Grain is 1 row every transaction (contains attributes which changes with every transaction)
 create table if not exists fact_credit_transactions(
-trans_num varchar(255),
+trans_num varchar(255) primary key,
 card_id int,
 merchant_id int,
 time_id int,
@@ -111,6 +114,37 @@ amt float,
 distance float,
 is_fraud int
 );
+
+insert into fact_credit_transactions
+(trans_num,
+card_id,
+merchant_id,
+time_id,
+location_id,
+amt,
+distance,
+is_fraud)
+select
+f.trans_num,
+c.card_id,
+m.merchant_id,
+t.time_id,
+l.location_id,
+f.amt,
+f.distance,
+f.is_fraud
+from featured_credit_card_transactions f
+left join dim_card c
+on f.cc_num_key=c.cc_num_key
+left join dim_merchant m
+on f.merchant=m.merchant
+left join dim_time t
+on f.trans_date=t.trans_date
+and f.hr=t.hr
+left join dim_location l
+on f.state=l.state
+and f.city=l.city
+and f.trunc_zip=l.trunc_zip;
 
  
 
@@ -136,7 +170,6 @@ group by cc_num_key;
 create table if not exists merchant_summary as
 select
 merchant,
-merch_zipcode,
 count(*) as total_txn_count,
 sum(amt) as total_merchant_txn,
 avg(amt) as avg_merchant_txn,
@@ -146,7 +179,7 @@ cast(sum(is_fraud)/count(*) as decimal) as fraud_rate,
 sum(weekend) as count_weekend_txn,
 sum(case when hr between 0 and 5 then 1 else 0 end) as night_txn_count
 from featured_credit_card_transactions 
-group by merchant, merch_zipcode;
+group by merchant;
 
 select count(*) from cc_num_masking;
 select count(*) from dim_card;
@@ -178,3 +211,7 @@ alter table temp_featured_credit_card_transactions
 rename to featured_credit_card_transactions;
 
 select * from fact_credit_transactions;
+
+select sum(amt) from fact_credit_transactions
+union all
+select sum(amt) from credit_card_transactions;
