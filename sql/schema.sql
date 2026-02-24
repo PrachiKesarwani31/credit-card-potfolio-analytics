@@ -181,6 +181,29 @@ sum(case when hr between 0 and 5 then 1 else 0 end) as night_txn_count
 from featured_credit_card_transactions 
 group by merchant;
 
+create table if not exists fraud_predictions
+(trans_num varchar(255) primary key,
+actual_label int,
+predicted_label int,
+predicted_probability decimal(10,6),
+model_version varchar(50),
+prediction_date date);
+
+create table if not exists fraud_model_metrics
+(model_version varchar(50),
+evaluation_date date,
+accuracy decimal(5,4),
+precision_score decimal(5,4),
+recall_score decimal(5,4),
+f1_score decimal(5,4),
+auc_score decimal(5,4),
+confusion_matrx_tp int,
+confusion_matrx_fp int,
+confusion_matrx_tn int,
+confusion_matrx_fn int);
+
+select * from fraud_model_metrics;
+
 select count(*) from cc_num_masking;
 select count(*) from dim_card;
 select count(*) from dim_merchant;
@@ -215,3 +238,11 @@ select * from fact_credit_transactions;
 select sum(amt) from fact_credit_transactions
 union all
 select sum(amt) from credit_card_transactions;
+
+select
+round(sum(is_fraud)*100/count(*),2)
+from fact_credit_transactions;
+
+select 
+*
+from customer_summary;
